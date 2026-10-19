@@ -2,14 +2,7 @@
  * [LXO] Bloqueur de pubs YouTube pour pmms
  *
  * La page DUI de FiveM a acces au contenu de l'iframe YouTube (pmms s'en sert deja
- * pour les filtres audio).
- *
- * 1) SUPPRESSION : des que le lecteur YouTube se charge, on intercepte les donnees
- *    qu'il recoit (fetch, XHR, JSON.parse) et on retire la liste des pubs
- *    (adPlacements, playerAds, adSlots...). Le lecteur ne sait donc pas qu'il y a
- *    des pubs a afficher : aucune pub ne se lance.
- * 2) SECOURS : si une pub passe quand meme (pubs integrees par YouTube dans la
- *    video elle-meme), pendant la pub :
+ * pour les filtres audio). On surveille le lecteur et, pendant une pub :
  *   - le son est coupe,
  *   - la pub est avancee jusqu'a sa fin (et acceleree),
  *   - le bouton "Passer" est clique des qu'il apparait.
@@ -42,188 +35,6 @@ function pmmsDebug(media, key, text) {
 		sendMessage('notify', {title: 'Bloqueur de pubs', text: text, duration: 8000});
 	} catch (e) {}
 }
-
-
-/* ------------------------------------------------------------------------- */
-/* 1) Suppression des pubs a la source                                       */
-/* ------------------------------------------------------------------------- */
-
-var PMMS_AD_KEYS = ['adPlacements', 'playerAds', 'adSlots', 'adBreakHeartbeatParams', 'adBreakParams'];
-var PMMS_NESTED_KEYS = ['playerResponse', 'raw_player_response', 'embedded_player_response', 'PLAYER_VARS', 'response', 'args'];
-
-function pmmsPrune(obj, depth) {
-	if (!obj || typeof obj !== 'object') {
-		return obj;
-	}
-
-	depth = depth || 0;
-
-	if (depth > 4) {
-		return obj;
-	}
-
-	if (Array.isArray(obj)) {
-		for (var i = 0; i < obj.length; i++) {
-			pmmsPrune(obj[i], depth + 1);
-		}
-		return obj;
-	}
-
-	for (var k = 0; k < PMMS_AD_KEYS.length; k++) {
-		if (Object.prototype.hasOwnProperty.call(obj, PMMS_AD_KEYS[k])) {
-			try {
-				delete obj[PMMS_AD_KEYS[k]];
-			} catch (e) {}
-		}
-	}
-
-	for (var n = 0; n < PMMS_NESTED_KEYS.length; n++) {
-		var key = PMMS_NESTED_KEYS[n];
-		var value = obj[key];
-
-		if (value && typeof value === 'object') {
-			pmmsPrune(value, depth + 1);
-		} else if (typeof value === 'string' && value.indexOf('adPlacements') !== -1) {
-			/* reponse du lecteur stockee sous forme de texte JSON */
-			try {
-				obj[key] = JSON.stringify(pmmsPrune(JSON.parse(value), depth + 1));
-			} catch (e) {}
-		}
-	}
-
-	return obj;
-}
-
-function pmmsIsPlayerUrl(url) {
-	return typeof url === 'string' && (url.indexOf('/youtubei/v1/player') !== -1 || url.indexOf('/get_video_info') !== -1);
-}
-
-function pmmsPatchYouTubeWindow(win) {
-	if (!win || win.__pmmsAdPatched) {
-		return;
-	}
-
-	win.__pmmsAdPatched = true;
-
-	/* JSON.parse : configuration du lecteur integree a la page */
-	try {
-		var origParse = win.JSON.parse;
-
-		win.JSON.parse = function() {
-			var result = origParse.apply(this, arguments);
-
-			try {
-				if (result && typeof result === 'object') {
-					pmmsPrune(result, 0);
-				}
-			} catch (e) {}
-
-			return result;
-		};
-	} catch (e) {}
-
-	/* fetch : requete /youtubei/v1/player qui renvoie les infos de la video + les pubs */
-	try {
-		var origFetch = win.fetch;
-
-		if (origFetch) {
-			win.fetch = function(input, init) {
-				var url = typeof input === 'string' ? input : (input && input.url);
-				var promise = origFetch.apply(this, arguments);
-
-				if (!pmmsIsPlayerUrl(url)) {
-					return promise;
-				}
-
-				return promise.then(function(response) {
-					return response.clone().text().then(function(text) {
-						try {
-							var data = pmmsPrune(JSON.parse(text), 0);
-							return new win.Response(JSON.stringify(data), {
-								status: response.status,
-								statusText: response.statusText,
-								headers: response.headers
-							});
-						} catch (e) {
-							return response;
-						}
-					}, function() {
-						return response;
-					});
-				});
-			};
-		}
-	} catch (e) {}
-
-	/* XMLHttpRequest : meme chose pour les anciennes versions du lecteur */
-	try {
-		var XHR = win.XMLHttpRequest;
-		var origOpen = XHR.prototype.open;
-
-		XHR.prototype.open = function(method, url) {
-			this.__pmmsUrl = url;
-			return origOpen.apply(this, arguments);
-		};
-
-		var desc = Object.getOwnPropertyDescriptor(XHR.prototype, 'responseText');
-
-		if (desc && desc.get) {
-			Object.defineProperty(XHR.prototype, 'responseText', {
-				configurable: true,
-				get: function() {
-					var text = desc.get.call(this);
-
-					if (this.readyState === 4 && pmmsIsPlayerUrl(this.__pmmsUrl) && text) {
-						try {
-							return JSON.stringify(pmmsPrune(JSON.parse(text), 0));
-						} catch (e) {}
-					}
-
-					return text;
-				}
-			});
-		}
-	} catch (e) {}
-
-	/* variables globales eventuelles de la page */
-	try {
-		['ytInitialPlayerResponse', 'ytplayer'].forEach(function(name) {
-			if (win[name]) {
-				pmmsPrune(win[name], 0);
-			}
-		});
-	} catch (e) {}
-}
-
-/*
- * Surveillance tres rapide (5 ms) de toutes les iframes de la page : des que l'une
- * d'elles a charge YouTube, on la "patche" avant que le lecteur ne demande ses pubs.
- */
-function pmmsWatchIframes() {
-	var frames = document.getElementsByTagName('iframe');
-
-	for (var i = 0; i < frames.length; i++) {
-		try {
-			var win = frames[i].contentWindow;
-
-			if (win && !win.__pmmsAdPatched && win.location && win.location.hostname.indexOf('youtube') !== -1) {
-				pmmsPatchYouTubeWindow(win);
-			}
-		} catch (e) {
-			/* iframe inaccessible ou en cours de navigation */
-		}
-	}
-}
-
-setInterval(pmmsWatchIframes, 5);
-
-if (window.MutationObserver) {
-	new MutationObserver(pmmsWatchIframes).observe(document.documentElement, {childList: true, subtree: true});
-}
-
-/* ------------------------------------------------------------------------- */
-/* 2) Secours : pub qui passe malgre tout                                    */
-/* ------------------------------------------------------------------------- */
 
 var PMMS_ADBLOCK_CSS = [
 	'.ytp-ad-module', '.ytp-ad-overlay-container', '.ytp-ad-overlay-slot',
@@ -277,10 +88,6 @@ function pmmsAdBlockTick(media) {
 	if (!doc) {
 		return;
 	}
-
-	try {
-		pmmsPatchYouTubeWindow(doc.defaultView);
-	} catch (e) {}
 
 	/* CSS anti-overlays, injecte une seule fois par document */
 	if (!doc.getElementById('pmms-adblock-style') && doc.head) {
