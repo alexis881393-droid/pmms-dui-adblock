@@ -1,0 +1,22 @@
+<html>
+	<head>
+		<title>pmms</title>
+		<link rel="stylesheet" href="mediaelementplayer.min.css">
+		<link rel="stylesheet" href="style.css">
+		<script>
+			/* Chargement des scripts sans cache : les mises a jour arrivent sans toucher a la config */
+			(function() {
+				var v = Math.floor(Date.now() / 60000);
+				var files = ['mediaelement.min.js', 'dailymotion.min.js', 'twitch.min.js', 'vimeo.min.js', 'wave.js', 'adblock.js', 'script.js'];
+				for (var i = 0; i < files.length; i++) {
+					document.write('<script src="' + files[i] + '?v=' + v + '"><\/script>');
+				}
+			})();
+		</script>
+	</head>
+	<body>
+		<div id="loading" style="display: none;">
+			<img src="loading.svg">
+		</div>
+	</body>
+</html>

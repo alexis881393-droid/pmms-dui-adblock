@@ -45,7 +45,12 @@ var PMMS_ADBLOCK_CSS = [
 	'.ytp-chrome-top', '.ytp-watermark', '.ytp-show-cards-title',
 	'.ytp-cards-teaser', '.ytp-impression-link', '.ytp-youtube-button',
 	'.ytp-gradient-top', '.ytp-suggested-action', '.iv-branding'
-].join(',') + '{display:none !important;visibility:hidden !important;}';
+].join(',') + '{display:none !important;visibility:hidden !important;}' +
+	/* Pendant une pub : image masquee (ecran noir) et controles caches */
+	'.ad-showing video,.ad-interrupting video{opacity:0 !important;}' +
+	'.ad-showing .ytp-chrome-bottom,.ad-interrupting .ytp-chrome-bottom,' +
+	'.ad-showing .ytp-spinner,.ad-showing .ytp-cued-thumbnail-overlay{display:none !important;}' +
+	'.ad-showing,.ad-interrupting{background:#000 !important;}';
 
 var PMMS_SKIP_SELECTORS = [
 	'.ytp-ad-skip-button',
@@ -124,6 +129,7 @@ function pmmsAdBlockTick(media) {
 		}
 
 		video.muted = true;
+		video.style.opacity = '0';
 
 		try {
 			video.playbackRate = 16;
@@ -159,6 +165,7 @@ function pmmsAdBlockTick(media) {
 		/* Fin de la pub : on remet le son et la vitesse normale */
 		media.pmms.inAd = false;
 		video.muted = media.pmms.mutedBeforeAd || false;
+		video.style.opacity = '';
 
 		try {
 			video.playbackRate = 1;
