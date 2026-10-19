@@ -126,9 +126,18 @@ function pmmsAdBlockTick(media) {
 			media.pmms.inAd = true;
 			media.pmms.mutedBeforeAd = video.muted;
 			pmmsDebug(null, null, 'Pub detectee : son coupe, pub sautee');
+
+			try {
+				media.youTubeApi.mute();
+			} catch (e) {}
 		}
 
+		/* son coupe en continu : pmms et YouTube remettent le volume regulierement */
 		video.muted = true;
+
+		try {
+			video.volume = 0;
+		} catch (e) {}
 		video.style.opacity = '0';
 
 		try {
@@ -164,6 +173,11 @@ function pmmsAdBlockTick(media) {
 	} else if (media.pmms && media.pmms.inAd) {
 		/* Fin de la pub : on remet le son et la vitesse normale */
 		media.pmms.inAd = false;
+
+		try {
+			media.youTubeApi.unMute();
+		} catch (e) {}
+
 		video.muted = media.pmms.mutedBeforeAd || false;
 		video.style.opacity = '';
 

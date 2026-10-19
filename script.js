@@ -423,7 +423,8 @@ function update(data) {
 			if (player.readyState > 0) {
 				var volume;
 
-				if (data.options.muted || data.volume == 0) {
+				if (data.options.muted || data.volume == 0 || (player.pmms && player.pmms.inAd)) {
+					/* [LXO] pub en cours : volume force a 0 (voir adblock.js) */
 					volume = 0;
 				} else {
 					volume = (((100 - data.distance * player.pmms.attenuationFactor) / 100) * player.pmms.volumeFactor) * (data.volume / 100);
