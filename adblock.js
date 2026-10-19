@@ -10,6 +10,32 @@
  * ecrans (titre, logo, videos suggerees en fin de video) sont masques par CSS.
  */
 
+/* Diagnostic : affiche en jeu ce que voit le bloqueur (mettre false une fois regle) */
+var PMMS_ADBLOCK_DEBUG = true;
+
+function pmmsDebug(media, key, text) {
+	if (!PMMS_ADBLOCK_DEBUG) {
+		return;
+	}
+
+	if (media) {
+		if (!media.pmms) {
+			media.pmms = {};
+		}
+		if (!media.pmms.debugSent) {
+			media.pmms.debugSent = {};
+		}
+		if (media.pmms.debugSent[key]) {
+			return;
+		}
+		media.pmms.debugSent[key] = true;
+	}
+
+	try {
+		sendMessage('notify', {title: 'Bloqueur de pubs', text: text, duration: 8000});
+	} catch (e) {}
+}
+
 var PMMS_ADBLOCK_CSS = [
 	'.ytp-ad-module', '.ytp-ad-overlay-container', '.ytp-ad-overlay-slot',
 	'.ytp-ad-image-overlay', '.ytp-ad-text-overlay', '.ytp-ad-player-overlay',
@@ -31,19 +57,29 @@ var PMMS_SKIP_SELECTORS = [
 ].join(',');
 
 function pmmsGetYouTubeDocument(media) {
+	var iframe = null;
+
 	try {
 		if (media && media.youTubeApi && media.youTubeApi.getIframe) {
-			var iframe = media.youTubeApi.getIframe();
-
-			if (iframe && iframe.contentWindow) {
-				return iframe.contentWindow.document;
-			}
+			iframe = media.youTubeApi.getIframe();
 		}
 	} catch (e) {
-		/* iframe pas encore prete */
+		return null;
 	}
 
-	return null;
+	if (!iframe) {
+		return null;
+	}
+
+	try {
+		var doc = iframe.contentWindow.document;
+		/* acces a une propriete pour declencher l'erreur cross-origin si elle existe */
+		var test = doc.body;
+		return doc;
+	} catch (e) {
+		pmmsDebug(media, 'noaccess', 'ECHEC : acces au lecteur YouTube refuse (' + (e && e.name ? e.name : e) + ')');
+		return null;
+	}
 }
 
 function pmmsAdBlockTick(media) {
@@ -68,6 +104,12 @@ function pmmsAdBlockTick(media) {
 		return;
 	}
 
+	pmmsDebug(media, 'access', 'OK : acces au lecteur YouTube');
+
+	if (!video.paused) {
+		pmmsDebug(media, 'classes', 'Classes du lecteur : ' + ytPlayer.className.replace(/\s+/g, ' ').substring(0, 300));
+	}
+
 	var adShowing = ytPlayer.classList.contains('ad-showing') || ytPlayer.classList.contains('ad-interrupting');
 
 	if (adShowing) {
@@ -78,6 +120,7 @@ function pmmsAdBlockTick(media) {
 		if (!media.pmms.inAd) {
 			media.pmms.inAd = true;
 			media.pmms.mutedBeforeAd = video.muted;
+			pmmsDebug(null, null, 'Pub detectee : son coupe, pub sautee');
 		}
 
 		video.muted = true;
@@ -120,6 +163,8 @@ function pmmsStartAdBlock(media, id) {
 	if (media.pmms.adBlockTimer) {
 		return;
 	}
+
+	pmmsDebug(media, 'loaded', 'Bloqueur charge (page ' + location.hostname + ')');
 
 	media.pmms.adBlockTimer = setInterval(function() {
 		/* Arret quand le lecteur a ete supprime de la page */
