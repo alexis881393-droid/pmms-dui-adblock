@@ -11,7 +11,7 @@
  */
 
 /* Diagnostic : affiche en jeu ce que voit le bloqueur (mettre false une fois regle) */
-var PMMS_ADBLOCK_DEBUG = true;
+var PMMS_ADBLOCK_DEBUG = false;
 
 function pmmsDebug(media, key, text) {
 	if (!PMMS_ADBLOCK_DEBUG) {
@@ -129,7 +129,22 @@ function pmmsAdBlockTick(media) {
 			video.playbackRate = 16;
 		} catch (e) {}
 
-		if (isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration - 0.1) {
+		/*
+		 * Saut direct a la fin UNIQUEMENT si la pub est une video separee et courte.
+		 * Sur les longues videos, YouTube integre souvent la pub dans la video elle-meme :
+		 * sauter a la fin couperait toute la musique. Dans ce cas on se contente
+		 * d'accelerer (x16) la pub en sourdine jusqu'a ce qu'elle soit passee.
+		 */
+		var contentDuration = 0;
+
+		try {
+			contentDuration = media.youTubeApi.getDuration() || 0;
+		} catch (e) {}
+
+		var isSeparateShortAd = isFinite(video.duration) && video.duration > 0 && video.duration <= 180 &&
+			contentDuration > 0 && Math.abs(contentDuration - video.duration) > 5;
+
+		if (isSeparateShortAd && video.currentTime < video.duration - 0.1) {
 			try {
 				video.currentTime = video.duration;
 			} catch (e) {}
@@ -166,6 +181,7 @@ function pmmsStartAdBlock(media, id) {
 
 	pmmsDebug(media, 'loaded', 'Bloqueur charge (page ' + location.hostname + ')');
 
+	/* verification rapide (100 ms) pour limiter le depassement apres une pub acceleree */
 	media.pmms.adBlockTimer = setInterval(function() {
 		/* Arret quand le lecteur a ete supprime de la page */
 		if (id && !document.getElementById(id)) {
@@ -182,5 +198,5 @@ function pmmsStartAdBlock(media, id) {
 		} catch (e) {
 			/* ne jamais casser la lecture */
 		}
-	}, 250);
+	}, 100);
 }
