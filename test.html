@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test YouTube</title>
+<style>
+body{background:#111;color:#eee;font-family:sans-serif;padding:16px}
+input{width:min(600px,100%);padding:8px}
+iframe{width:min(640px,100%);aspect-ratio:16/9;border:0;margin-top:12px;display:block}
+</style>
+</head>
+<body>
+<h2>Test d'intégration YouTube sur cette page</h2>
+<p>Colle le lien YouTube utilisé en jeu puis clique sur Tester.</p>
+<input id="u" placeholder="https://www.youtube.com/watch?v=..."> <button id="b">Tester</button>
+<p id="r"></p>
+<div id="player"></div>
+<script>
+function idOf(u){var m=u.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/);return m?m[1]:null}
+var tag=document.createElement('script');tag.src='https://www.youtube.com/iframe_api';document.head.appendChild(tag);
+var player;
+document.getElementById('b').onclick=function(){
+  var id=idOf(document.getElementById('u').value);var r=document.getElementById('r');
+  if(!id){r.textContent='Lien non reconnu';return}
+  r.textContent='Chargement...';
+  if(player){player.destroy()}
+  player=new YT.Player('player',{videoId:id,playerVars:{autoplay:1,origin:location.origin},events:{
+    onReady:function(){r.textContent='OK : la vidéo se charge sur cette page.'},
+    onError:function(e){var c={2:'lien invalide',5:'erreur HTML5',100:'vidéo supprimée ou privée',101:"l'auteur interdit l'intégration",150:"l'auteur interdit l'intégration",152:'page refusée par YouTube (origine)',153:'page refusée par YouTube (referer manquant)'};
+      r.textContent='ERREUR '+e.data+' : '+(c[e.data]||'inconnue')}}});
+};
+var q=new URLSearchParams(location.search).get('v');if(q){document.getElementById('u').value=q;window.onYouTubeIframeAPIReady=function(){document.getElementById('b').click()}}
+</script>
+</body>
+</html>
